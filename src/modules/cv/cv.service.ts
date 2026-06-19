@@ -14,6 +14,7 @@ import { CV_INCLUDE_ALL } from './cv.constants';
 import { CreateCvRequestDto } from './dto/request/create-cv.request.dto';
 import { UpdateCvRequestDto } from './dto/request/update-cv.request.dto';
 import { UpsertPersonalInfoRequestDto } from './dto/request/upsert-personal-info.request.dto';
+import { UpsertLayoutRequestDto } from './dto/request/upsert-layout.request.dto';
 import {
   BulkUpsertExperienceRequestDto,
   BulkUpsertEducationRequestDto,
@@ -148,6 +149,33 @@ export class CvService {
     await this.findCvOrThrow(cvId, userId);
     await this.prisma.cv.delete({ where: { id: cvId } });
     this.logger.log(`CV deleted: ${cvId}`);
+  }
+
+  // Full-replace of the section layout blob (reorder / hide / rename headings).
+  // Keys stay opaque; the DTO has already validated structure. See
+  // prismacv-ui/docs/backend-support-cv-editor.md § "Phase 0 — FROZEN contract".
+  async updateLayout(
+    cvId: string,
+    userId: string,
+    dto: UpsertLayoutRequestDto,
+  ) {
+    await this.findCvOrThrow(cvId, userId);
+
+    const cv = await this.prisma.cv.update({
+      where: { id: cvId },
+      data: {
+        layout: {
+          mainOrder: dto.mainOrder,
+          sideOrder: dto.sideOrder,
+          hidden: dto.hidden,
+          titles: dto.titles,
+        },
+      },
+      include: CV_INCLUDE_ALL,
+    });
+
+    this.logger.log(`CV layout updated: ${cvId}`);
+    return cv;
   }
 
   async duplicate(cvId: string, userId: string) {

@@ -80,6 +80,23 @@ export class CustomSectionResponseDto {
   @ApiProperty() sortOrder!: number;
 }
 
+export class CvLayoutResponseDto {
+  @ApiProperty({
+    type: [String],
+    example: ['summary', 'experience', 'projects'],
+  })
+  mainOrder!: string[];
+  @ApiProperty({
+    type: [String],
+    example: ['skills', 'education', 'languages'],
+  })
+  sideOrder!: string[];
+  @ApiProperty({ type: [String], example: ['certifications'] })
+  hidden!: string[];
+  @ApiProperty({ example: { experience: 'Work History' } })
+  titles!: Record<string, string>;
+}
+
 // ─── CV Response DTOs ────────────────────────────────────────────────────────
 
 export class CvResponseDto {
@@ -105,6 +122,8 @@ export class CvResponseDto {
   languages!: LanguageResponseDto[];
   @ApiProperty({ type: [CustomSectionResponseDto] })
   customSections!: CustomSectionResponseDto[];
+  @ApiPropertyOptional({ type: CvLayoutResponseDto })
+  layout?: CvLayoutResponseDto;
 }
 
 export class CvListItemResponseDto {

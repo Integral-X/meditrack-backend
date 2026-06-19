@@ -1,7 +1,21 @@
 /**
  * Builds an HTML document from CV data for PDF rendering via Puppeteer.
  * Each template ID gets a slightly different visual layout.
+ *
+ * Section layout: when the CV has a `layout` blob (see
+ * prismacv-ui/docs/backend-support-cv-editor.md § "Phase 0 — FROZEN contract"),
+ * the renderer honours it — hidden sections are dropped, headings are renamed,
+ * and sections render in the flattened `[...mainOrder, ...sideOrder]` order. The
+ * render stays single-column (two-column parity is a separate template redesign).
+ * When `layout` is absent the default fixed order is used, byte-for-byte unchanged.
  */
+
+interface SectionLayoutData {
+  mainOrder: string[];
+  sideOrder: string[];
+  hidden: string[];
+  titles: Record<string, string>;
+}
 
 interface CvPdfData {
   title: string;
@@ -56,9 +70,11 @@ interface CvPdfData {
     proficiency: string;
   }[];
   customSections: {
+    id: string;
     title: string;
     entries: unknown;
   }[];
+  layout?: unknown;
 }
 
 function esc(val: string | null | undefined): string {
@@ -91,6 +107,10 @@ function dateRange(
 export function buildCvHtml(cv: CvPdfData): string {
   const pi = cv.personalInfo;
   const accentColor = getAccentColor(cv.templateId);
+  const layout = normalizeLayout(cv.layout);
+  const body = layout
+    ? buildOrderedSections(cv, layout)
+    : buildDefaultSections(cv);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -120,14 +140,8 @@ export function buildCvHtml(cv: CvPdfData): string {
 </style>
 </head>
 <body>
-${buildHeader(pi)}
-${buildSection('Experience', cv.experiences, buildExperience)}
-${buildSection('Education', cv.education, buildEducation)}
-${buildSkillsSection(cv.skills)}
-${buildSection('Certifications', cv.certifications, buildCertification)}
-${buildSection('Projects', cv.projects, buildProject)}
-${buildLanguagesSection(cv.languages)}
-${buildCustomSections(cv.customSections)}
+${buildHeader(pi, !layout)}
+${body}
 </body>
 </html>`;
 }
@@ -147,7 +161,12 @@ function getAccentColor(templateId: string | null): string {
   return colors[templateId ?? ''] ?? '#1a5276';
 }
 
-function buildHeader(pi: CvPdfData['personalInfo']): string {
+// `includeSummary` keeps the summary in the header for the default render;
+// when a layout is present, summary becomes a reorderable/hideable section.
+function buildHeader(
+  pi: CvPdfData['personalInfo'],
+  includeSummary: boolean,
+): string {
   if (!pi) return '';
   const parts: string[] = [];
   if (pi.email) parts.push(`<span>${esc(pi.email)}</span>`);
@@ -160,11 +179,156 @@ function buildHeader(pi: CvPdfData['personalInfo']): string {
   if (pi.linkedinUrl)
     parts.push(`<span><a href="${esc(pi.linkedinUrl)}">LinkedIn</a></span>`);
 
+  const summary =
+    includeSummary && pi.summary
+      ? `\n<div class="summary">${esc(pi.summary)}</div>`
+      : '';
+
   return `
 <h1>${esc(pi.fullName)}</h1>
-<div class="contact">${parts.join('')}</div>
-${pi.summary ? `<div class="summary">${esc(pi.summary)}</div>` : ''}`;
+<div class="contact">${parts.join('')}</div>${summary}`;
 }
+
+// ─── Default render (no layout) — fixed order, unchanged output ───────────────
+
+function buildDefaultSections(cv: CvPdfData): string {
+  return [
+    buildSection('Experience', cv.experiences, buildExperience),
+    buildSection('Education', cv.education, buildEducation),
+    buildSkillsSection(cv.skills),
+    buildSection('Certifications', cv.certifications, buildCertification),
+    buildSection('Projects', cv.projects, buildProject),
+    buildLanguagesSection(cv.languages),
+    buildCustomSections(cv.customSections),
+  ].join('\n');
+}
+
+// ─── Layout-driven render — honour order / hidden / titles ────────────────────
+
+const DEFAULT_SECTION_ORDER = [
+  'summary',
+  'experience',
+  'projects',
+  'skills',
+  'education',
+  'certifications',
+  'languages',
+];
+
+const DEFAULT_SECTION_TITLES: Record<string, string> = {
+  summary: 'Summary',
+  experience: 'Experience',
+  education: 'Education',
+  skills: 'Skills',
+  certifications: 'Certifications',
+  projects: 'Projects',
+  languages: 'Languages',
+};
+
+function buildOrderedSections(
+  cv: CvPdfData,
+  layout: SectionLayoutData,
+): string {
+  // key -> rendered body (no heading). Custom sections are keyed by their id.
+  const bodies: Record<string, string> = {
+    summary: cv.personalInfo?.summary
+      ? `<div class="summary">${esc(cv.personalInfo.summary)}</div>`
+      : '',
+    experience: cv.experiences.map(buildExperience).join('\n'),
+    education: cv.education.map(buildEducation).join('\n'),
+    skills: buildSkillsBody(cv.skills),
+    certifications: cv.certifications.map(buildCertification).join('\n'),
+    projects: cv.projects.map(buildProject).join('\n'),
+    languages: buildLanguagesBody(cv.languages),
+  };
+  const customTitles: Record<string, string> = {};
+  for (const cs of cv.customSections) {
+    bodies[cs.id] =
+      `<div class="custom-entries">${buildCustomEntries(cs.entries)}</div>`;
+    customTitles[cs.id] = cs.title;
+  }
+
+  const hidden = new Set(layout.hidden);
+  const availableKeys = [
+    ...DEFAULT_SECTION_ORDER,
+    ...cv.customSections.map(cs => cs.id),
+  ];
+
+  // Flatten main + side; duplicates resolve to their LAST occurrence (frozen
+  // contract: "last column wins"). Then append any present-but-unlisted keys.
+  const sequence = [...layout.mainOrder, ...layout.sideOrder];
+  const placed = new Set<string>();
+  const orderedReversed: string[] = [];
+  for (let i = sequence.length - 1; i >= 0; i--) {
+    const key = sequence[i];
+    if (hidden.has(key) || placed.has(key)) continue;
+    placed.add(key);
+    orderedReversed.push(key);
+  }
+  const order = orderedReversed.reverse();
+  for (const key of availableKeys) {
+    if (!placed.has(key) && !hidden.has(key)) {
+      placed.add(key);
+      order.push(key);
+    }
+  }
+
+  return order
+    .filter(key => key in bodies)
+    .map(key => {
+      const body = bodies[key];
+      if (!body) return '';
+      const overridden = Object.prototype.hasOwnProperty.call(
+        layout.titles,
+        key,
+      );
+      // Summary stays headingless (matching the header style) unless renamed.
+      if (key === 'summary' && !overridden) return body;
+      const title =
+        layout.titles[key] ??
+        DEFAULT_SECTION_TITLES[key] ??
+        customTitles[key] ??
+        '';
+      return `<h2>${esc(title)}</h2>\n${body}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+// Reads the opaque JSON column defensively. Returns null when there is nothing
+// meaningful to honour, so the default render path is used.
+function normalizeLayout(raw: unknown): SectionLayoutData | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const toStringArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === 'string')
+      : [];
+
+  const mainOrder = toStringArray(obj.mainOrder);
+  const sideOrder = toStringArray(obj.sideOrder);
+  const hidden = toStringArray(obj.hidden);
+  const titles =
+    obj.titles && typeof obj.titles === 'object' && !Array.isArray(obj.titles)
+      ? (Object.fromEntries(
+          Object.entries(obj.titles as Record<string, unknown>).filter(
+            ([, v]) => typeof v === 'string',
+          ),
+        ) as Record<string, string>)
+      : {};
+
+  if (
+    !mainOrder.length &&
+    !sideOrder.length &&
+    !hidden.length &&
+    !Object.keys(titles).length
+  ) {
+    return null;
+  }
+  return { mainOrder, sideOrder, hidden, titles };
+}
+
+// ─── Section renderers ────────────────────────────────────────────────────────
 
 function buildSection<T>(
   title: string,
@@ -191,7 +355,7 @@ function buildEducation(edu: CvPdfData['education'][0]): string {
 </div>`;
 }
 
-function buildSkillsSection(skills: CvPdfData['skills']): string {
+function buildSkillsBody(skills: CvPdfData['skills']): string {
   if (!skills.length) return '';
   const items = skills
     .map(
@@ -199,7 +363,12 @@ function buildSkillsSection(skills: CvPdfData['skills']): string {
         `<div class="skill-item">${esc(s.name)} <span class="skill-level">${esc(s.level)}</span></div>`,
     )
     .join('\n');
-  return `<h2>Skills</h2>\n<div class="skills-grid">${items}</div>`;
+  return `<div class="skills-grid">${items}</div>`;
+}
+
+function buildSkillsSection(skills: CvPdfData['skills']): string {
+  const body = buildSkillsBody(skills);
+  return body ? `<h2>Skills</h2>\n${body}` : '';
 }
 
 function buildCertification(cert: CvPdfData['certifications'][0]): string {
@@ -220,7 +389,7 @@ function buildProject(proj: CvPdfData['projects'][0]): string {
 </div>`;
 }
 
-function buildLanguagesSection(langs: CvPdfData['languages']): string {
+function buildLanguagesBody(langs: CvPdfData['languages']): string {
   if (!langs.length) return '';
   const items = langs
     .map(
@@ -228,23 +397,31 @@ function buildLanguagesSection(langs: CvPdfData['languages']): string {
         `<span class="lang-item">${esc(l.name)} <span class="lang-prof">${esc(l.proficiency)}</span></span>`,
     )
     .join('\n');
-  return `<h2>Languages</h2>\n<div>${items}</div>`;
+  return `<div>${items}</div>`;
+}
+
+function buildLanguagesSection(langs: CvPdfData['languages']): string {
+  const body = buildLanguagesBody(langs);
+  return body ? `<h2>Languages</h2>\n${body}` : '';
+}
+
+function buildCustomEntries(entries: unknown): string {
+  if (!Array.isArray(entries)) return '';
+  return entries
+    .map(e => {
+      const vals = Object.values(e as Record<string, unknown>)
+        .filter(Boolean)
+        .map(v => esc(String(v)));
+      return `<div class="entry-desc">${vals.join(' · ')}</div>`;
+    })
+    .join('\n');
 }
 
 function buildCustomSections(sections: CvPdfData['customSections']): string {
   if (!sections.length) return '';
   return sections
     .map(s => {
-      const entries = Array.isArray(s.entries)
-        ? (s.entries as Record<string, unknown>[])
-            .map(e => {
-              const vals = Object.values(e)
-                .filter(Boolean)
-                .map(v => esc(String(v)));
-              return `<div class="entry-desc">${vals.join(' · ')}</div>`;
-            })
-            .join('\n')
-        : '';
+      const entries = buildCustomEntries(s.entries);
       return `<h2>${esc(s.title)}</h2>\n<div class="custom-entries">${entries}</div>`;
     })
     .join('\n');
