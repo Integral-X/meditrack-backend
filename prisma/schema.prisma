@@ -159,6 +159,7 @@ model Cv {
   status     CvStatus @default(DRAFT)
   templateId String?
   isDefault  Boolean  @default(false)
+  layout     Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

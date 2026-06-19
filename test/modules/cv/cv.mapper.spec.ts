@@ -110,6 +110,66 @@ describe('CvMapper', () => {
 
       expect(result.personalInfo).toBeFalsy();
     });
+
+    it('should include the layout when present', () => {
+      const layout = {
+        mainOrder: ['summary', 'experience'],
+        sideOrder: ['skills'],
+        hidden: ['certifications'],
+        titles: { experience: 'Work History' },
+      };
+      const result = mapper.cvToResponse({ ...mockFullCv, layout } as any);
+
+      expect(result.layout).toEqual(layout);
+    });
+
+    it('should omit layout when the column is null', () => {
+      const result = mapper.cvToResponse({
+        ...mockFullCv,
+        layout: null,
+      } as any);
+
+      expect(result.layout).toBeUndefined();
+    });
+  });
+
+  describe('layoutToResponse', () => {
+    it('maps a stored blob into the layout DTO', () => {
+      const result = mapper.layoutToResponse({
+        mainOrder: ['summary'],
+        sideOrder: ['skills'],
+        hidden: [],
+        titles: { skills: 'Toolbox' },
+      } as any);
+
+      expect(result).toEqual({
+        mainOrder: ['summary'],
+        sideOrder: ['skills'],
+        hidden: [],
+        titles: { skills: 'Toolbox' },
+      });
+    });
+
+    it('returns undefined for null or a non-object', () => {
+      expect(mapper.layoutToResponse(null)).toBeUndefined();
+      expect(mapper.layoutToResponse([] as any)).toBeUndefined();
+      expect(mapper.layoutToResponse('nope' as any)).toBeUndefined();
+    });
+
+    it('coerces malformed fields defensively', () => {
+      const result = mapper.layoutToResponse({
+        mainOrder: ['ok', 42, null],
+        sideOrder: 'not-an-array',
+        titles: ['not-an-object'],
+      } as any);
+
+      expect(result).toEqual({
+        mainOrder: ['ok'],
+        sideOrder: [],
+        hidden: [],
+        titles: {},
+      });
+    });
   });
 
   describe('cvToListItemResponse', () => {
