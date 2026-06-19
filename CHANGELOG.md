@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/Integral-X/prismacv-backend/compare/v1.10.0...v1.11.0) (2026-06-19)
+
+
+### Features
+
+* persist CV section layout (order, hidden, heading overrides) ([#178](https://github.com/Integral-X/prismacv-backend/issues/178)) ([fbcf5cc](https://github.com/Integral-X/prismacv-backend/commit/fbcf5cc1f52528085e4fe5971f8ddab6560843bf))
+
 # [1.10.0](https://github.com/Integral-X/prismacv-backend/compare/v1.9.0...v1.10.0) (2026-05-08)
 
 
