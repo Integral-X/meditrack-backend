@@ -48,6 +48,7 @@ import { CreateCvRequestDto } from './dto/request/create-cv.request.dto';
 import { UpdateCvRequestDto } from './dto/request/update-cv.request.dto';
 import { ImportLinkedInToCvRequestDto } from './dto/request/import-linkedin-to-cv.request.dto';
 import { UpsertPersonalInfoRequestDto } from './dto/request/upsert-personal-info.request.dto';
+import { UpsertLayoutRequestDto } from './dto/request/upsert-layout.request.dto';
 import {
   BulkUpsertExperienceRequestDto,
   BulkUpsertEducationRequestDto,
@@ -68,6 +69,7 @@ import {
   ProjectResponseDto,
   LanguageResponseDto,
   CustomSectionResponseDto,
+  CvLayoutResponseDto,
 } from './dto/response/cv.response.dto';
 import { ShareCvRequestDto } from './dto/request/share-cv.request.dto';
 import { CvShareResponseDto } from './dto/response/share-cv.response.dto';
@@ -545,5 +547,26 @@ export class CvController {
       dto,
     );
     return items.map(cs => this.cvMapper.customSectionToResponse(cs));
+  }
+
+  @Put(':id/layout')
+  @UseGuards(JwtUserAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Replace section layout',
+    description:
+      'Persists the per-CV section layout (column order, hidden sections, heading overrides). Full replace.',
+  })
+  @ApiParam({ name: 'id', description: 'CV UUID' })
+  @ApiBody({ type: UpsertLayoutRequestDto })
+  @ApiResponse({ status: 200, type: CvLayoutResponseDto })
+  async updateLayout(
+    @GetUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpsertLayoutRequestDto,
+  ): Promise<CvLayoutResponseDto> {
+    const cv = await this.cvService.updateLayout(id, user.id, dto);
+    // Non-null after a validated write — the column was just set to an object.
+    return this.cvMapper.layoutToResponse(cv.layout)!;
   }
 }

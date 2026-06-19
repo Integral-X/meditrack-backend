@@ -164,4 +164,52 @@ describe('CvService', () => {
       );
     });
   });
+
+  describe('updateLayout', () => {
+    const layoutDto = {
+      mainOrder: ['summary', 'experience'],
+      sideOrder: ['skills'],
+      hidden: ['certifications'],
+      titles: { experience: 'Work History' },
+    };
+
+    it('should persist the layout blob as-is', async () => {
+      prisma.cv.findUnique.mockResolvedValue(mockCv as any);
+      prisma.cv.update.mockResolvedValue({
+        ...mockCv,
+        layout: layoutDto,
+      } as any);
+
+      const result = await service.updateLayout(cvId, userId, layoutDto);
+
+      expect(prisma.cv.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: cvId },
+          data: { layout: layoutDto },
+        }),
+      );
+      expect((result as any).layout).toEqual(layoutDto);
+    });
+
+    it('should throw NotFoundException for a non-existent CV', async () => {
+      prisma.cv.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateLayout(cvId, userId, layoutDto),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.cv.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw ForbiddenException if the user does not own the CV', async () => {
+      prisma.cv.findUnique.mockResolvedValue({
+        ...mockCv,
+        userId: 'other-user',
+      } as any);
+
+      await expect(
+        service.updateLayout(cvId, userId, layoutDto),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.cv.update).not.toHaveBeenCalled();
+    });
+  });
 });

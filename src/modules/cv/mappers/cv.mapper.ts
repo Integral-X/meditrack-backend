@@ -10,6 +10,7 @@ import {
   ProjectResponseDto,
   LanguageResponseDto,
   CustomSectionResponseDto,
+  CvLayoutResponseDto,
 } from '../dto/response/cv.response.dto';
 import type {
   Cv as PrismaCv,
@@ -62,6 +63,32 @@ export class CvMapper {
     dto.customSections = (cv.customSections ?? []).map(cs =>
       this.customSectionToResponse(cs),
     );
+    dto.layout = this.layoutToResponse(cv.layout);
+    return dto;
+  }
+
+  // Layout is stored as opaque JSON; map defensively in case the column was
+  // hand-edited or predates the validated write path. `null` / non-object → absent.
+  layoutToResponse(
+    layout: PrismaCv['layout'],
+  ): CvLayoutResponseDto | undefined {
+    if (!layout || typeof layout !== 'object' || Array.isArray(layout)) {
+      return undefined;
+    }
+    const raw = layout as Record<string, unknown>;
+    const toStringArray = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === 'string')
+        : [];
+
+    const dto = new CvLayoutResponseDto();
+    dto.mainOrder = toStringArray(raw.mainOrder);
+    dto.sideOrder = toStringArray(raw.sideOrder);
+    dto.hidden = toStringArray(raw.hidden);
+    dto.titles =
+      raw.titles && typeof raw.titles === 'object' && !Array.isArray(raw.titles)
+        ? (raw.titles as Record<string, string>)
+        : {};
     return dto;
   }
 
