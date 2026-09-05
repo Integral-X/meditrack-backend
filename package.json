@@ -72,7 +72,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@nestjs/cli": "^11.0.16",
-    "@nestjs/schematics": "^11.0.9",
+    "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.1.16",
     "@types/bcryptjs": "^3.0.0",
     "@types/compression": "^1.8.1",
