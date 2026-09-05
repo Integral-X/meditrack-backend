@@ -46,7 +46,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/prismacv_test
 
       - name: Run Prisma migration drift check
-        run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --exit-code
+        run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url postgresql://postgres:password@localhost:5432/postgres --exit-code
 
       - name: Run linting
         run: npm run lint
